@@ -5,6 +5,7 @@ from flask import Flask, request, jsonify, send_file, session, redirect, url_for
 from werkzeug.utils import secure_filename
 import uuid
 from functools import wraps
+import time
 
 app = Flask(__name__)
 app.secret_key = 'excel-filter-secret-key-change-in-production'
@@ -16,6 +17,9 @@ app.config['ADMIN_USERNAME'] = 'admin'
 app.config['ADMIN_PASSWORD'] = 'admin123'
 
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
+cache = {}
+CACHE_TTL = 300
 
 def init_db():
     conn = sqlite3.connect(app.config['DB_FILE'])
@@ -102,6 +106,7 @@ def upload_file():
                         (file_id, filename, original_name, columns, row_count))
             conn.commit()
             conn.close()
+            cache.clear()
             
             return jsonify({
                 'success': True,
@@ -137,7 +142,13 @@ def filter_data():
         return jsonify({'success': False, 'error': '文件已被删除'})
     
     try:
-        df = pd.read_excel(filepath)
+        if file_id in cache and time.time() - cache[file_id]['time'] < CACHE_TTL:
+            df = cache[file_id]['df']
+        else:
+            df = pd.read_excel(filepath)
+            df = df.fillna('')
+            cache[file_id] = {'df': df, 'time': time.time()}
+        
         filters = data.get('filters', [])
         
         for f in filters:
@@ -169,8 +180,17 @@ def filter_data():
             elif operator == 'not_empty':
                 df = df[df[column].notna() & (df[column] != '')]
         
-        result = df.head(1000).fillna('').to_dict('records')
-        result = [[v if not (isinstance(v, float) and pd.isna(v)) else '' for v in row.values()] for row in result]
+        df_result = df.head(1000).fillna('')
+        result = []
+        for row in df_result.to_dict('records'):
+            cleaned_row = {}
+            for k, v in row.items():
+                if isinstance(v, float) and (v != v or v == ''):  # NaN check
+                    cleaned_row[k] = ''
+                else:
+                    cleaned_row[k] = v
+            result.append(cleaned_row)
+        
         return jsonify({
             'success': True,
             'data': result,
@@ -313,6 +333,8 @@ def delete_file(file_id):
             os.remove(filepath)
         conn.execute('UPDATE excel_files SET status = ? WHERE file_id = ?', ('deleted', file_id))
         conn.commit()
+        if file_id in cache:
+            del cache[file_id]
     
     conn.close()
     return redirect(url_for('admin'))
