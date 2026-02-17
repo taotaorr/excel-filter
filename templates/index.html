@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>数据查询系统</title>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{font-family:'Segoe UI',sans-serif;background:linear-gradient(135deg,#667eea,#764ba2);min-height:100vh;padding:20px}
+        .card{background:white;border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,0.1);overflow:hidden;max-width:1400px;margin:0 auto}
+        .header{background:linear-gradient(135deg,#667eea,#764ba2);color:white;padding:20px 32px;display:flex;justify-content:space-between;align-items:center}
+        .header h1{font-size:22px}
+        .header a{color:white;text-decoration:none;opacity:0.9}
+        .content{padding:24px}
+        .title{font-size:18px;font-weight:600;color:#333;margin-bottom:16px}
+        .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;margin-bottom:24px}
+        .file-item{border:2px solid #ebeef5;border-radius:12px;padding:20px;cursor:pointer;transition:all 0.3s;background:#fafafa}
+        .file-item:hover{border-color:#409eff;background:#ecf5ff;transform:translateY(-2px)}
+        .file-item.active{border-color:#67c23a;background:#f0f9eb}
+        .file-item h4{font-size:16px;color:#333;margin-bottom:8px}
+        .file-item p{font-size:13px;color:#999;margin:4px 0}
+        .filter{background:#f5f7fa;border-radius:12px;padding:20px;margin-bottom:24px}
+        .filter-row{background:white;border-radius:8px;padding:16px;margin-bottom:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;border-left:4px solid #409eff}
+        .filter-row select,.filter-row input{padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:14px}
+        .btn{padding:10px 20px;border:none;border-radius:6px;cursor:pointer;font-size:14px;background:#409eff;color:white}
+        .btn:hover{background:#337ecc}
+        .btn-green{background:#67c23a}
+        .btn-gray{background:#999}
+        .btn-red{background:#f56c6c;padding:8px 12px}
+        .table-wrap{background:white;border-radius:12px;overflow:hidden;border:1px solid #ebeef5}
+        .table-wrap table{width:100%;border-collapse:collapse}
+        .table-wrap th{background:#667eea;color:white;padding:14px 12px;text-align:left;font-weight:500;white-space:nowrap}
+        .table-wrap td{padding:12px;border-bottom:1px solid #ebeef5;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+        .empty{text-align:center;padding:60px 20px;color:#999}
+        .stat{display:inline-block;background:linear-gradient(135deg,#667eea,#764ba2);color:white;padding:4px 12px;border-radius:20px;font-size:13px;margin-left:12px}
+        .box{max-height:500px;overflow:auto}
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div class="card">
+            <div class="header">
+                <h1>📊 数据查询系统</h1>
+                <a href="/admin/login">管理后台</a>
+            </div>
+            <div class="content">
+                <div class="title">📁 选择数据文件</div>
+                <div v-if="loading" class="empty">加载文件中...</div>
+                <div v-else-if="files.length===0" class="empty">暂无可查询的文件</div>
+                <div v-else class="grid">
+                    <div v-for="f in files" :key="f.file_id" class="file-item" :class="{active:selectedFile===f.file_id}" @click="selectFile(f)">
+                        <h4 v-text="'📄 '+f.original_name"></h4>
+                        <p>行数：{{f.row_count}} | 字段：{{f.columns.split(',').length}}</p>
+                        <p v-text="'上传时间：'+formatTime(f.upload_time)"></p>
+                    </div>
+                </div>
+                <div v-if="selectedFile" class="filter">
+                    <div class="title">🔍 数据筛选</div>
+                    <div v-for="(filter,idx) in filters" :key="idx" class="filter-row">
+                        <select v-model="filter.column"><option value="">选择字段</option><option v-for="c in columns" :key="c" :value="c" v-text="c"></option></select>
+                        <select v-model="filter.operator">
+                            <option value="contains">包含</option><option value="not_contains">不包含</option><option value="equals">等于</option><option value="not_equals">不等于</option>
+                            <option value="gt">大于</option><option value="lt">小于</option><option value="gte">大于等于</option><option value="lte">小于等于</option>
+                            <option value="empty">为空</option><option value="not_empty">不为空</option>
+                        </select>
+                        <input v-model="filter.value" placeholder="输入值" v-if="filter.operator!=='empty'&&filter.operator!=='not_empty'">
+                        <button class="btn btn-red" @click="removeFilter(idx)" v-if="filters.length>1">✕</button>
+                    </div>
+                    <div style="margin-top:16px">
+                        <button class="btn btn-gray" @click="addFilter">+ 添加条件</button>
+                        <button class="btn" @click="applyFilter">应用筛选</button>
+                        <button class="btn btn-green" @click="exportData">导出结果</button>
+                        <button class="btn btn-gray" @click="clearFilter">清空</button>
+                    </div>
+                </div>
+                <div v-if="selectedFile" class="table-wrap">
+                    <div class="title">📋 筛选结果<span class="stat">显示 {{displayCount}} / {{totalCount}} 条</span></div>
+                    <div class="box">
+                        <table v-if="tableData.length">
+                            <thead><tr><th v-for="c in tableColumns" :key="c" v-text="c"></th></tr></thead>
+                            <tbody><tr v-for="(row,idx) in tableData" :key="idx"><td v-for="c in tableColumns" :key="c" v-text="row[c]"></td></tr></tbody>
+                        </table>
+                    </div>
+                    <div v-if="!tableData.length" class="empty">没有符合条件的数据</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.js"></script>
+    <script>
+        Vue.createApp({
+            data(){
+                return{
+                    files:[],loading:true,selectedFile:null,columns:[],
+                    filters:[{column:'',operator:'contains',value:''}],
+                    tableData:[],tableColumns:[],totalCount:0,displayCount:0
+                }
+            },
+            mounted(){
+                this.loadFiles();
+            },
+            methods:{
+                async loadFiles(){
+                    try{
+                        const r=await fetch('/api/files');
+                        const d=await r.json();
+                        if(d.success)this.files=d.files;
+                    }catch(e){console.error(e)}
+                    this.loading=false;
+                },
+                selectFile(f){
+                    this.selectedFile=f.file_id;
+                    this.columns=f.columns.split(',');
+                    this.filters=[{column:'',operator:'contains',value:''}];
+                    this.applyFilter();
+                },
+                addFilter(){this.filters.push({column:'',operator:'contains',value:''})},
+                removeFilter(i){this.filters.splice(i,1)},
+                getFilters(){return this.filters.filter(f=>f.column)},
+                async applyFilter(){
+                    if(!this.selectedFile)return;
+                    try{
+                        const r=await fetch('/filter',{
+                            method:'POST',headers:{'Content-Type':'application/json'},
+                            body:JSON.stringify({file_id:this.selectedFile,filters:this.getFilters()})
+                        });
+                        const d=await r.json();
+                        if(d.success){
+                            this.tableData=d.data;
+                            this.tableColumns=d.data.length?Object.keys(d.data[0]):[];
+                            this.totalCount=d.total_count;
+                            this.displayCount=d.display_count;
+                        }
+                    }catch(e){console.error(e)}
+                },
+                async exportData(){
+                    if(!this.selectedFile)return;
+                    try{
+                        const r=await fetch('/export',{
+                            method:'POST',headers:{'Content-Type':'application/json'},
+                            body:JSON.stringify({file_id:this.selectedFile,filters:this.getFilters()})
+                        });
+                        const d=await r.json();
+                        if(d.success)window.location.href=d.download_url;
+                    }catch(e){console.error(e)}
+                },
+                clearFilter(){this.filters=[{column:'',operator:'contains',value:''}];this.applyFilter()},
+                formatTime(t){return t?t.replace('T',' ').substring(0,19):''}
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>

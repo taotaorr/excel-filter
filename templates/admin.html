@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管理后台</title>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{font-family:'Segoe UI',sans-serif;background:#f5f7fa;min-height:100vh}
+        .header{background:linear-gradient(135deg,#667eea,#764ba2);color:white;padding:16px 32px;display:flex;justify-content:space-between;align-items:center}
+        .header h1{font-size:20px}
+        .header a{color:white;text-decoration:none;opacity:0.9;margin-right:15px}
+        .btn{padding:8px 16px;border:none;border-radius:6px;cursor:pointer;font-size:14px;background:#e6a23c;color:white}
+        .content{padding:24px;max-width:1200px;margin:0 auto}
+        .card{background:white;border-radius:16px;box-shadow:0 2px 12px rgba(0,0,0,0.08);padding:24px;margin-bottom:24px}
+        .title{font-size:18px;font-weight:600;color:#333;margin-bottom:20px}
+        .upload{border:2px dashed #67c23a;border-radius:12px;padding:40px;text-align:center;cursor:pointer;transition:all 0.3s;background:#fafafa}
+        .upload:hover{background:#f0f9eb}
+        .table-wrap{overflow-x:auto}
+        table{width:100%;border-collapse:collapse}
+        th{background:#667eea;color:white;padding:14px 12px;text-align:left;font-weight:500}
+        td{padding:14px 12px;border-bottom:1px solid #ebeef5}
+        tr:hover{background:#f5f7fa}
+        .empty{text-align:center;padding:40px;color:#999}
+        .btn-danger{background:#f56c6c}
+        .alert{padding:12px 16px;border-radius:8px;margin-top:16px}
+        .alert-success{background:#f0f9eb;color:#67c23a}
+        .alert-error{background:#fef0f0;color:#f56c6c}
+        .stat{background:linear-gradient(135deg,#667eea,#764ba2);color:white;padding:6px 16px;border-radius:20px;font-size:14px;margin-left:12px}
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div class="header">
+            <h1>⚙️ 管理后台</h1>
+            <div>
+                <a href="/">查看前台</a>
+                <button class="btn" @click="logout">退出登录</button>
+            </div>
+        </div>
+        <div class="content">
+            <div class="card">
+                <div class="title">📤 上传新文件</div>
+                <div class="upload" @click="triggerUpload" @dragover.prevent @dragleave="dragLeave" @drop.prevent="handleDrop" :class="{dragover:isDragover}">
+                    <div v-if="uploading">上传中...</div>
+                    <div v-else>
+                        <p style="color:#999">点击或拖拽上传 Excel 文件</p>
+                        <p style="color:#ccc;font-size:13px">支持 .xlsx 和 .xls 格式</p>
+                    </div>
+                    <input type="file" ref="fileInput" accept=".xlsx,.xls" style="display:none" @change="handleFileSelect">
+                </div>
+                <div v-if="uploadSuccess" class="alert alert-success" v-text="'上传成功！'+uploadFileInfo"></div>
+                <div v-if="uploadError" class="alert alert-error" v-text="uploadError"></div>
+            </div>
+            <div class="card">
+                <div class="title">📁 已上传文件列表<span class="stat" v-text="files.length+' 个文件'"></span></div>
+                <div class="table-wrap" v-if="files.length">
+                    <table>
+                        <thead><tr><th>文件名</th><th>字段数</th><th>行数</th><th>上传时间</th><th>操作</th></tr></thead>
+                        <tbody>
+                            <tr v-for="f in files" :key="f.file_id">
+                                <td v-text="'📄 '+f.original_name"></td>
+                                <td v-text="f.columns.split(',').length"></td>
+                                <td v-text="f.row_count"></td>
+                                <td v-text="formatTime(f.upload_time)"></td>
+                                <td><button class="btn btn-danger" @click="deleteFile(f.file_id)">删除</button></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div v-else class="empty">暂无上传的文件</div>
+            </div>
+        </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.js"></script>
+    <script>
+        Vue.createApp({
+            data(){
+                return{
+                    fileInput:null,files:[],uploading:false,uploadSuccess:false,uploadError:'',uploadFileInfo:'',isDragover:false
+                }
+            },
+            mounted(){this.loadFiles()},
+            methods:{
+                triggerUpload(){this.$refs.fileInput.click()},
+                handleFileSelect(e){if(e.target.files.length)this.uploadFile(e.target.files[0])},
+                dragLeave(){this.isDragover=false},
+                handleDrop(e){this.isDragover=false;if(e.dataTransfer.files.length)this.uploadFile(e.dataTransfer.files[0])},
+                async loadFiles(){
+                    try{
+                        const r=await fetch('/api/admin/files');
+                        const d=await r.json();
+                        if(d.success)this.files=d.files;
+                    }catch(e){console.error(e)}
+                },
+                async uploadFile(file){
+                    this.uploading=true;this.uploadSuccess=false;this.uploadError='';
+                    const fd=new FormData();fd.append('file',file);
+                    try{
+                        const r=await fetch('/upload',{method:'POST',body:fd});
+                        const d=await r.json();
+                        if(d.success){this.uploadSuccess=true;this.uploadFileInfo=d.filename+' - '+d.row_count+'行';this.loadFiles();}
+                        else{this.uploadError=d.error||'上传失败'}
+                    }catch(e){this.uploadError='上传出错'}
+                    this.uploading=false;
+                },
+                async deleteFile(id){
+                    if(!confirm('确定删除？'))return;
+                    try{await fetch('/admin/delete/'+id);this.loadFiles();}catch(e){}
+                },
+                logout(){window.location.href='/admin/logout'},
+                formatTime(t){return t?t.replace('T',' ').substring(0,19):''}
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
