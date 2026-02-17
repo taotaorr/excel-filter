@@ -169,7 +169,8 @@ def filter_data():
             elif operator == 'not_empty':
                 df = df[df[column].notna() & (df[column] != '')]
         
-        result = df.head(1000).to_dict('records')
+        result = df.head(1000).fillna('').to_dict('records')
+        result = [[v if not (isinstance(v, float) and pd.isna(v)) else '' for v in row.values()] for row in result]
         return jsonify({
             'success': True,
             'data': result,
@@ -233,7 +234,7 @@ def export_data():
         
         export_filename = f"filtered_{uuid.uuid4().hex[:8]}.xlsx"
         export_path = os.path.join(app.config['UPLOAD_FOLDER'], export_filename)
-        df.to_excel(export_path, index=False)
+        df.fillna('').to_excel(export_path, index=False)
         
         return jsonify({
             'success': True,
