@@ -27,10 +27,20 @@
         .alert-success{background:#f0f9eb;color:#67c23a}
         .alert-error{background:#fef0f0;color:#f56c6c}
         .stat{background:linear-gradient(135deg,#667eea,#764ba2);color:white;padding:6px 16px;border-radius:20px;font-size:14px;margin-left:12px}
+        .loading{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:1000}
+        .loading-box{background:white;border-radius:12px;padding:40px;text-align:center}
+        .spinner{width:40px;height:40px;border:4px solid #f3f3f3;border-top:4px solid #667eea;border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 16px}
+        @keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
     </style>
 </head>
 <body>
     <div id="app">
+        <div class="loading" v-if="loading">
+            <div class="loading-box">
+                <div class="spinner"></div>
+                <p v-text="loadingText"></p>
+            </div>
+        </div>
         <div class="header">
             <h1>⚙️ 管理后台</h1>
             <div>
@@ -42,7 +52,7 @@
             <div class="card">
                 <div class="title">📤 上传新文件</div>
                 <div class="upload" @click="triggerUpload" @dragover.prevent @dragleave="dragLeave" @drop.prevent="handleDrop" :class="{dragover:isDragover}">
-                    <div v-if="uploading">上传中...</div>
+                    <div v-if="uploading">上传中: {{uploadFileName}}</div>
                     <div v-else>
                         <p style="color:#999">点击或拖拽上传 Excel 文件</p>
                         <p style="color:#ccc;font-size:13px">支持 .xlsx 和 .xls 格式</p>
@@ -77,7 +87,8 @@
         Vue.createApp({
             data(){
                 return{
-                    fileInput:null,files:[],uploading:false,uploadSuccess:false,uploadError:'',uploadFileInfo:'',isDragover:false
+                    fileInput:null,files:[],uploading:false,uploadSuccess:false,uploadError:'',uploadFileInfo:'',isDragover:false,
+                    loading:false,loadingText:'',uploadFileName:''
                 }
             },
             mounted(){this.loadFiles()},
@@ -94,7 +105,7 @@
                     }catch(e){console.error(e)}
                 },
                 async uploadFile(file){
-                    this.uploading=true;this.uploadSuccess=false;this.uploadError='';
+                    this.uploadFileName=file.name;this.uploading=true;this.uploadSuccess=false;this.uploadError='';this.loading=true;this.loadingText='正在上传文件: '+file.name;
                     const fd=new FormData();fd.append('file',file);
                     try{
                         const r=await fetch('/upload',{method:'POST',body:fd});
@@ -102,11 +113,13 @@
                         if(d.success){this.uploadSuccess=true;this.uploadFileInfo=d.filename+' - '+d.row_count+'行';this.loadFiles();}
                         else{this.uploadError=d.error||'上传失败'}
                     }catch(e){this.uploadError='上传出错'}
-                    this.uploading=false;
+                    this.uploading=false;this.loading=false;
                 },
                 async deleteFile(id){
                     if(!confirm('确定删除？'))return;
+                    this.loading=true;this.loadingText='正在删除文件...';
                     try{await fetch('/admin/delete/'+id);this.loadFiles();}catch(e){}
+                    this.loading=false;
                 },
                 logout(){window.location.href='/admin/logout'},
                 formatTime(t){return t?t.replace('T',' ').substring(0,19):''}

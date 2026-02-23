@@ -34,10 +34,21 @@
         .empty{text-align:center;padding:60px 20px;color:#999}
         .stat{display:inline-block;background:linear-gradient(135deg,#667eea,#764ba2);color:white;padding:4px 12px;border-radius:20px;font-size:13px;margin-left:12px}
         .box{max-height:500px;overflow:auto}
+        .loading{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:1000}
+        .loading-box{background:white;border-radius:12px;padding:40px;text-align:center}
+        .spinner{width:40px;height:40px;border:4px solid #f3f3f3;border-top:4px solid #667eea;border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 16px}
+        @keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
+        .btn:disabled{opacity:0.6;cursor:not-allowed}
     </style>
 </head>
 <body>
     <div id="app">
+        <div class="loading" v-if="loading">
+            <div class="loading-box">
+                <div class="spinner"></div>
+                <p>加载中，请稍候...</p>
+            </div>
+        </div>
         <div class="card">
             <div class="header">
                 <h1>📊 数据查询系统</h1>
@@ -68,8 +79,8 @@
                     </div>
                     <div style="margin-top:16px">
                         <button class="btn btn-gray" @click="addFilter">+ 添加条件</button>
-                        <button class="btn" @click="applyFilter">应用筛选</button>
-                        <button class="btn btn-green" @click="exportData">导出结果</button>
+                        <button class="btn" @click="applyFilter" :disabled="filtering">应用筛选</button>
+                        <button class="btn btn-green" @click="exportData" :disabled="exporting">导出结果</button>
                         <button class="btn btn-gray" @click="clearFilter">清空</button>
                     </div>
                 </div>
@@ -93,7 +104,8 @@
                 return{
                     files:[],loading:true,selectedFile:null,columns:[],
                     filters:[{column:'',operator:'contains',value:''}],
-                    tableData:[],tableColumns:[],totalCount:0,displayCount:0
+                    tableData:[],tableColumns:[],totalCount:0,displayCount:0,
+                    filtering:false,exporting:false
                 }
             },
             mounted(){
@@ -119,6 +131,7 @@
                 getFilters(){return this.filters.filter(f=>f.column)},
                 async applyFilter(){
                     if(!this.selectedFile)return;
+                    this.filtering=true;
                     try{
                         const r=await fetch('/filter',{
                             method:'POST',headers:{'Content-Type':'application/json'},
@@ -132,9 +145,11 @@
                             this.displayCount=d.display_count;
                         }
                     }catch(e){console.error(e)}
+                    this.filtering=false;
                 },
                 async exportData(){
                     if(!this.selectedFile)return;
+                    this.exporting=true;
                     try{
                         const r=await fetch('/export',{
                             method:'POST',headers:{'Content-Type':'application/json'},
@@ -143,6 +158,7 @@
                         const d=await r.json();
                         if(d.success)window.location.href=d.download_url;
                     }catch(e){console.error(e)}
+                    this.exporting=false;
                 },
                 clearFilter(){this.filters=[{column:'',operator:'contains',value:''}];this.applyFilter()},
                 formatTime(t){return t?t.replace('T',' ').substring(0,19):''}
