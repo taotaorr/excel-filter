@@ -21,12 +21,10 @@
         .file-item p{font-size:13px;color:#999;margin:4px 0}
         .filter{background:#f5f7fa;border-radius:12px;padding:20px;margin-bottom:24px}
         .filter-row{background:white;border-radius:8px;padding:16px;margin-bottom:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;border-left:4px solid #409eff}
-        .filter-row select,.filter-row input{padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:14px}
+        .filter-row input{padding:10px 14px;border:2px solid #409eff;border-radius:8px;font-size:15px}
         .btn{padding:10px 20px;border:none;border-radius:6px;cursor:pointer;font-size:14px;background:#409eff;color:white}
         .btn:hover{background:#337ecc}
-        .btn-green{background:#67c23a}
-        .btn-gray{background:#999}
-        .btn-red{background:#f56c6c;padding:8px 12px}
+        .btn:disabled{opacity:0.6;cursor:not-allowed}
         .table-wrap{background:white;border-radius:12px;overflow:hidden;border:1px solid #ebeef5}
         .table-wrap table{width:100%;border-collapse:collapse}
         .table-wrap th{background:#667eea;color:white;padding:14px 12px;text-align:left;font-weight:500;white-space:nowrap}
@@ -34,11 +32,12 @@
         .empty{text-align:center;padding:60px 20px;color:#999}
         .stat{display:inline-block;background:linear-gradient(135deg,#667eea,#764ba2);color:white;padding:4px 12px;border-radius:20px;font-size:13px;margin-left:12px}
         .box{max-height:500px;overflow:auto}
+        .alert{padding:12px 16px;border-radius:8px;margin-top:12px}
+        .alert-error{background:#fef0f0;color:#f56c6c}
         .loading{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:1000}
         .loading-box{background:white;border-radius:12px;padding:40px;text-align:center}
         .spinner{width:40px;height:40px;border:4px solid #f3f3f3;border-top:4px solid #667eea;border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 16px}
         @keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
-        .btn:disabled{opacity:0.6;cursor:not-allowed}
     </style>
 </head>
 <body>
@@ -66,23 +65,15 @@
                     </div>
                 </div>
                 <div v-if="selectedFile" class="filter">
-                    <div class="title">🔍 数据筛选</div>
-                    <div v-for="(filter,idx) in filters" :key="idx" class="filter-row">
-                        <select v-model="filter.column"><option value="">选择字段</option><option v-for="c in columns" :key="c" :value="c" v-text="c"></option></select>
-                        <select v-model="filter.operator">
-                            <option value="contains">包含</option><option value="not_contains">不包含</option><option value="equals">等于</option><option value="not_equals">不等于</option>
-                            <option value="gt">大于</option><option value="lt">小于</option><option value="gte">大于等于</option><option value="lte">小于等于</option>
-                            <option value="empty">为空</option><option value="not_empty">不为空</option>
-                        </select>
-                        <input v-model="filter.value" placeholder="输入值" v-if="filter.operator!=='empty'&&filter.operator!=='not_empty'">
-                        <button class="btn btn-red" @click="removeFilter(idx)" v-if="filters.length>1">✕</button>
+                    <div class="title">🔍 数据查询</div>
+                    <div class="filter-row">
+                        <input v-model="searchValue" placeholder="请输入账号查询" @keyup.enter="applyFilter" style="flex:1;padding:10px 14px;border:2px solid #409eff;border-radius:8px;font-size:15px">
+                        <button class="btn" @click="applyFilter" :disabled="filtering" style="padding:10px 24px;font-size:15px">
+                            <span v-if="filtering">查询中...</span>
+                            <span v-else>查询</span>
+                        </button>
                     </div>
-                    <div style="margin-top:16px">
-                        <button class="btn btn-gray" @click="addFilter">+ 添加条件</button>
-                        <button class="btn" @click="applyFilter" :disabled="filtering">应用筛选</button>
-                        <button class="btn btn-green" @click="exportData" :disabled="exporting">导出结果</button>
-                        <button class="btn btn-gray" @click="clearFilter">清空</button>
-                    </div>
+                    <div v-if="queryError" class="alert alert-error" v-text="queryError"></div>
                 </div>
                 <div v-if="selectedFile" class="table-wrap">
                     <div class="title">📋 筛选结果<span class="stat">显示 {{displayCount}} / {{totalCount}} 条</span></div>
@@ -103,9 +94,8 @@
             data(){
                 return{
                     files:[],loading:true,selectedFile:null,columns:[],
-                    filters:[{column:'',operator:'contains',value:''}],
-                    tableData:[],tableColumns:[],totalCount:0,displayCount:0,
-                    filtering:false,exporting:false
+                    searchValue:'',tableData:[],tableColumns:[],totalCount:0,displayCount:0,
+                    filtering:false,queryError:''
                 }
             },
             mounted(){
@@ -123,15 +113,25 @@
                 selectFile(f){
                     this.selectedFile=f.file_id;
                     this.columns=f.columns.split(',');
-                    this.filters=[{column:'',operator:'contains',value:''}];
-                    this.applyFilter();
+                    this.searchValue='';
+                    this.tableData=[];
+                    this.tableColumns=[];
+                    this.totalCount=0;
+                    this.displayCount=0;
+                    this.queryError='';
                 },
-                addFilter(){this.filters.push({column:'',operator:'contains',value:''})},
-                removeFilter(i){this.filters.splice(i,1)},
-                getFilters(){return this.filters.filter(f=>f.column)},
+                getFilters(){
+                    if(!this.searchValue)return[];
+                    return[{column:'账号',operator:'contains',value:this.searchValue.trim()}];
+                },
                 async applyFilter(){
                     if(!this.selectedFile)return;
+                    if(!this.searchValue.trim()){
+                        this.queryError='请输入账号进行查询';
+                        return;
+                    }
                     this.filtering=true;
+                    this.queryError='';
                     try{
                         const r=await fetch('/filter',{
                             method:'POST',headers:{'Content-Type':'application/json'},
@@ -143,24 +143,13 @@
                             this.tableColumns=d.data.length?Object.keys(d.data[0]):[];
                             this.totalCount=d.total_count;
                             this.displayCount=d.display_count;
+                            if(this.displayCount===0){
+                                this.queryError='未找到匹配的账号';
+                            }
                         }
-                    }catch(e){console.error(e)}
+                    }catch(e){console.error(e);this.queryError='查询失败，请重试';}
                     this.filtering=false;
                 },
-                async exportData(){
-                    if(!this.selectedFile)return;
-                    this.exporting=true;
-                    try{
-                        const r=await fetch('/export',{
-                            method:'POST',headers:{'Content-Type':'application/json'},
-                            body:JSON.stringify({file_id:this.selectedFile,filters:this.getFilters()})
-                        });
-                        const d=await r.json();
-                        if(d.success)window.location.href=d.download_url;
-                    }catch(e){console.error(e)}
-                    this.exporting=false;
-                },
-                clearFilter(){this.filters=[{column:'',operator:'contains',value:''}];this.applyFilter()},
                 formatTime(t){return t?t.replace('T',' ').substring(0,19):''}
             }
         }).mount('#app');
