@@ -19,7 +19,7 @@ app.config['ADMIN_PASSWORD'] = 'admin123'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 cache = {}
-CACHE_TTL = 2678400
+CACHE_TTL = 300
 
 def init_db():
     conn = sqlite3.connect(app.config['DB_FILE'])
